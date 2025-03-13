@@ -24,7 +24,7 @@ struct Args {
 
     /// Partition key value
     #[clap(short = 'P', long)]
-    partition_value: String,
+    partition_value: Vec<String>,
 
     /// Sort key start value (for range query)
     #[clap(short = 'S', long)]
@@ -55,37 +55,35 @@ struct Args {
     warmup_queries: usize,
 }
 
-fn make_query(client: &Client, args: &Args) -> QueryFluentBuilder {
-    let mut expr_attr_values = HashMap::new();
-    expr_attr_values.insert(
-        ":pk".to_string(),
-        AttributeValue::S(args.partition_value.clone()),
-    );
-    expr_attr_values.insert(
-        ":start".to_string(),
-        AttributeValue::S(args.sort_start.clone()),
-    );
-    expr_attr_values.insert(
-        ":end".to_string(),
-        AttributeValue::S(args.sort_end.clone()),
-    );
+fn make_query(client: &Client, args: &Args) -> Vec<QueryFluentBuilder> {
+    let expr_attr_values_without_pkey = HashMap::from([ (
+            ":start".to_owned(),
+            AttributeValue::S(args.sort_start.clone()),
+        ),(
+            ":end".to_owned(),
+            AttributeValue::S(args.sort_end.clone()),
+        )]);
 
-    let mut expr_attr_names = HashMap::new();
-    expr_attr_names.insert(format!("#{}", args.partition_key), args.partition_key.clone());
-    expr_attr_names.insert(format!("#{}", args.sort_key), args.sort_key.clone());
-
+    let expr_attr_names = HashMap::from([
+        (format!("#{}", args.partition_key), args.partition_key.clone()),
+        (format!("#{}", args.sort_key), args.sort_key.clone())
+    ]);
     // Build key condition expression
     let key_cond_expr = format!(
         "#{} = :pk AND #{} BETWEEN :start AND :end",
         args.partition_key, args.sort_key
     );
 
-    client
+    let query_without_pkey = client
         .query()
         .table_name(&args.table)
         .key_condition_expression(key_cond_expr)
-        .set_expression_attribute_names(Some(expr_attr_names))
-        .set_expression_attribute_values(Some(expr_attr_values))
+        .set_expression_attribute_names(Some(expr_attr_names));
+    args.partition_value.iter().map(|val| {
+        let mut expr_attr_values = expr_attr_values_without_pkey.clone();
+        expr_attr_values.insert(":pk".to_owned(), AttributeValue::S(val.clone()));
+        query_without_pkey.clone().set_expression_attribute_values(Some(expr_attr_values))
+    }).collect()
 }
 
 fn quantile_ms(sorted_durations: &[Duration], quantile: f64) -> f64 {
@@ -102,11 +100,11 @@ async fn main() -> () {
         .load()
         .await;
     let client = Client::new(&config);
-    let query = make_query(&client, &args);
+    let queries = make_query(&client, &args);
 
     println!("Starting benchmark with {} queries at {} QPS with parallelism of {}", 
         args.num_queries, args.qps, args.parallelism);
-    println!("Table: {}, Partition Key: {} = {}", 
+    println!("Table: {}, Partition Key: {} = {:?}", 
         args.table, args.partition_key, args.partition_value);
     println!("Sort Key: {}, Range: {} to {}", 
         args.sort_key, args.sort_start, args.sort_end);
@@ -116,10 +114,10 @@ async fn main() -> () {
     println!("Starting {} warmup queries", args.warmup_queries);
     let start = time::Instant::now();
     let mut interval = time::interval_at(start, Duration::from_secs_f64(1.0 / args.qps as f64));
-    for _ in 0..args.warmup_queries {
+    for i in 0..args.warmup_queries {
         interval.tick().await;
         let permit = semaphore.clone().acquire_owned().await.unwrap();
-        let query = query.clone();
+        let query = queries[i % queries.len()].clone();
         let error_sender = error_sender.clone();
         tokio::spawn(async move {
             if let Err(e) = query.send().await {
@@ -137,10 +135,10 @@ async fn main() -> () {
     let start = time::Instant::now();
     interval.reset_at(start);
 
-    for _ in 0..args.num_queries {
+    for i in 0..args.num_queries {
         interval.tick().await;
         let permit = semaphore.clone().acquire_owned().await.unwrap();
-        let query = query.clone();
+        let query = queries[i % queries.len()].clone();
         let sender = sender.clone();
         let error_sender = error_sender.clone();
         tokio::spawn(async move {
