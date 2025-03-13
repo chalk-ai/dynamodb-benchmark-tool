@@ -29,7 +29,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::754784422779:role/chalk-api-server
+          role-to-assume: arn:aws:iam::754784422779:role/chalk-private-github-actions
           role-session-name: github-actions-${{ github.run_id }}
 
       - name: Login to Amazon ECR
