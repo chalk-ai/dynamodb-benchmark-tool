@@ -31,6 +31,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: arn:aws:iam::754784422779:role/chalk-private-github-actions
           role-session-name: github-actions-${{ github.run_id }}
+          output-credentials: true
 
       - name: Configure AWS credentials 2
         uses: aws-actions/configure-aws-credentials@v4
