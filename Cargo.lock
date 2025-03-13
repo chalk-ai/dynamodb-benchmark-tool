@@ -586,7 +586,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dynamo-sdk-bench"
+name = "dynamodbbench"
 version = "0.1.0"
 dependencies = [
  "aws-config",

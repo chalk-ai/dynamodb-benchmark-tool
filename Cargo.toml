@@ -1,5 +1,5 @@
 [package]
-name = "dynamo-sdk-bench"
+name = "dynamodbbench"
 version = "0.1.0"
 edition = "2021"
 
