@@ -38,6 +38,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: arn:aws:iam::754784422779:role/chalk-api-server
           role-session-name: github-actions-${{ github.run_id }}
+          role-chaining: true
 
       - name: Login to Amazon ECR
         id: login-ecr
