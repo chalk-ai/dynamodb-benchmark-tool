@@ -11,6 +11,10 @@ use tokio::time;
 #[derive(Parser)]
 #[command(author, version, about = "DynamoDB range query latency benchmark")]
 struct Cli {
+    /// DynamoDB endpoint url
+    #[arg(short = 'u', long)]
+    endpoint_url: Option<String>,
+
     /// DynamoDB table name
     #[arg(short, long)]
     table: String,
@@ -35,6 +39,7 @@ struct Cli {
 enum Commands {
     Bench(BenchArgs),
     ShowMapping {
+        /// Chalk environment name
         #[arg(short, long)]
         environment: String
     }
@@ -111,10 +116,15 @@ async fn main() -> () {
     let cli = Cli::parse();
 
     // Initialize AWS SDK
-    let config = aws_config::from_env()
-        .region(aws_sdk_dynamodb::config::Region::new(cli.region.clone()))
-        .load()
-        .await;
+    let mut config = aws_config::from_env()
+        .region(aws_sdk_dynamodb::config::Region::new(cli.region.clone()));
+
+    if let Some(endpoint_url) = &cli.endpoint_url {
+        config = config.endpoint_url(endpoint_url)
+    }
+
+    let config = config.load().await;
+
     let client = Client::new(&config);
 
     let args = match &cli.command {
@@ -229,7 +239,7 @@ async fn show_mapping(client: &Client, cli: &Cli, environment: &str) {
     while let Some(resp) = stream.next().await {
         let resp = match resp {
             Err(e) => { 
-                println!("Encountered query error: {}", e);
+                println!("Encountered query error: {:?}", e);
                 continue
             },
             Ok(resp) => resp,
